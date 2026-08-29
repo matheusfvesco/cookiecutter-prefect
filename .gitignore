@@ -1,0 +1,31 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Agent tooling
+.agents/
+agents/
+
+# SpecKit
+.specify/
+speckit/
+/specs/
+
+# OpenCode
+.opencode/
+opencode/
+
+# Skills
+.skills/
+skills/
+skills-lock.json
+
+# Agent instructions
+AGENTS.md
