@@ -5,7 +5,7 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from prefect_cookiecutter.cli import main, project_slug
+from ccpf.cli import main, project_slug
 
 
 def test_project_slug_is_generic_and_path_safe() -> None:

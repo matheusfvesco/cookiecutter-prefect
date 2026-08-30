@@ -476,6 +476,34 @@ wheels = [
 ]
 
 [[package]]
+name = "cookiecutter-prefect"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "click" },
+    { name = "cookiecutter" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "prefect" },
+    { name = "pytest" },
+    { name = "pyyaml" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "click", specifier = ">=8.1" },
+    { name = "cookiecutter", specifier = ">=2.6" },
+    { name = "prefect", marker = "extra == 'dev'", specifier = ">=3.8.4" },
+    { name = "pytest", marker = "extra == 'dev'" },
+    { name = "pyyaml", marker = "extra == 'dev'" },
+    { name = "ruff", marker = "extra == 'dev'" },
+]
+provides-extras = ["dev"]
+
+[[package]]
 name = "coolname"
 version = "5.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1231,34 +1259,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/2b/8d/0844fb814a6a02f03
 wheels = [
     { url = "https://files.pythonhosted.org/packages/76/87/39588aab2c3b2e12bfd84d64bcb2fe605376dbd6450edaf9da0a30ea814e/prefect-3.8.4-py3-none-any.whl", hash = "sha256:f7b4a5be5e186c34ca73485060062ebb4277771df8441f78fcaea5f86c8aa012", size = 15563985, upload-time = "2026-08-25T17:37:36.818Z" },
 ]
-
-[[package]]
-name = "prefect-cookiecutter"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "click" },
-    { name = "cookiecutter" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "prefect" },
-    { name = "pytest" },
-    { name = "pyyaml" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "click", specifier = ">=8.1" },
-    { name = "cookiecutter", specifier = ">=2.6" },
-    { name = "prefect", marker = "extra == 'dev'", specifier = ">=3.8.4" },
-    { name = "pytest", marker = "extra == 'dev'" },
-    { name = "pyyaml", marker = "extra == 'dev'" },
-    { name = "ruff", marker = "extra == 'dev'" },
-]
-provides-extras = ["dev"]
 
 [[package]]
 name = "prometheus-client"

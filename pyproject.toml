@@ -1,5 +1,5 @@
 [project]
-name = "prefect-cookiecutter"
+name = "cookiecutter-prefect"
 version = "0.1.0"
 description = "A Cookiecutter template and CLI for flexible Prefect projects"
 readme = "README.md"
@@ -18,20 +18,20 @@ dev = [
 ]
 
 [project.scripts]
-prefect-cookiecutter = "prefect_cookiecutter.cli:main"
+ccpf = "ccpf.__main__:main"
 
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["prefect_cookiecutter*"]
+include = ["ccpf*"]
 
 [tool.setuptools.package-data]
-prefect_cookiecutter = ["template/cookiecutter.json", "template/**/*"]
+ccpf = ["template/cookiecutter.json", "template/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [tool.ruff]
-exclude = ["examples_structure", "prefect_cookiecutter/template"]
+exclude = ["examples_structure", "ccpf/template"]

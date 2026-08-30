@@ -1,1 +1,1 @@
-recursive-include prefect_cookiecutter/template *
+recursive-include ccpf/template *

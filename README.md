@@ -1,4 +1,4 @@
-# Prefect Cookiecutter
+# Cookiecutter Prefect
 
 A small Cookiecutter template for starting flexible Prefect projects.
 
@@ -17,26 +17,26 @@ example, `src/logic/etl/` can be renamed to `src/logic/data_scraping/`,
 Clone the repository and install the CLI as a local `uv` tool:
 
 ```bash
-git clone https://github.com/matheusfvesco/prefect-cookiecutter.git
-cd prefect-cookiecutter
+git clone https://github.com/matheusfvesco/cookiecutter-prefect.git
+cd cookiecutter-prefect
 uv tool install .
 ```
 
 Run the interactive project generator:
 
 ```bash
-prefect-cookiecutter
+ccpf
 ```
 
 The CLI asks for the project name, description, Python version, Prefect version,
 Docker image name, and Docker image tag. The image name defaults to the
 generated project slug and the tag defaults to `latest`. Python and Prefect
-defaults are pinned in `prefect_cookiecutter/template/cookiecutter.json`.
+defaults are pinned in `ccpf/template/cookiecutter.json`.
 
 Options can be supplied directly:
 
 ```bash
-prefect-cookiecutter \
+ccpf \
   --project-name "My Prefect Project" \
   --description "A reusable workflow project" \
   --python-version 3.12 \
@@ -46,11 +46,11 @@ prefect-cookiecutter \
   --output-dir .
 ```
 
-Use `prefect-cookiecutter --help` to see all available options. The same
+Use `ccpf --help` to see all available options. The same
 command is available as a Python module:
 
 ```bash
-python -m prefect_cookiecutter
+python -m ccpf
 ```
 
 For local development of the CLI itself, install the cloned repository in
@@ -64,7 +64,7 @@ Cookiecutter can also be invoked directly against the template in the cloned
 repository:
 
 ```bash
-uv run cookiecutter prefect_cookiecutter/template
+uv run cookiecutter ccpf/template
 ```
 
 ## Generated Project
