@@ -1,0 +1,41 @@
+# prefect artifacts
+.prefectignore
+
+# python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+
+# type checking artifacts
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+
+# IPython
+profile_default/
+ipython_config.py
+*.ipynb_checkpoints/*
+
+# environments
+.python-version
+.env
+.venv
+env/
+venv/
+
+# macOS
+.DS_Store
+
+# Dask
+dask-worker-space/
+
+# editors
+.idea/
+.vscode/
+
+# version control
+.git/
+.hg/

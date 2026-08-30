@@ -1,9 +1,37 @@
 [project]
 name = "prefect-cookiecutter"
 version = "0.1.0"
-description = "Add your description here"
+description = "A Cookiecutter template and CLI for flexible Prefect projects"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "prefect>=3.8.4",
+    "click>=8.1",
+    "cookiecutter>=2.6",
 ]
+
+[project.optional-dependencies]
+dev = [
+    "prefect>=3.8.4",
+    "pytest",
+    "pyyaml",
+    "ruff",
+]
+
+[project.scripts]
+prefect-cookiecutter = "prefect_cookiecutter.cli:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["prefect_cookiecutter*"]
+
+[tool.setuptools.package-data]
+prefect_cookiecutter = ["template/cookiecutter.json", "template/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+exclude = ["examples_structure", "prefect_cookiecutter/template"]

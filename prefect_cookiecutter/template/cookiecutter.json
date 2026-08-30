@@ -1,0 +1,9 @@
+{
+  "project_name": "prefect-project",
+  "project_slug": "{{ cookiecutter.project_name.lower().replace(' ', '-') }}",
+  "description": "A Prefect workflow project.",
+  "python_version": "3.12",
+  "prefect_version": "3.8.4",
+  "image_name": "{{ cookiecutter.project_slug }}",
+  "image_tag": "latest"
+}
