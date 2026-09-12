@@ -11,3 +11,5 @@ dist/
 .env*
 coverage/
 *.log*
+Dockerfile*
+.dockerignore

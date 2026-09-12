@@ -53,6 +53,32 @@ command is available as a Python module:
 python -m ccpf
 ```
 
+## Deployment Modes
+
+The generator defaults to `centralized`, which creates an application
+deployment helper for an existing Prefect server and Docker work pool. Use
+`--deployment-mode` to choose a different artifact set:
+
+| Mode | Generated deployment files | Server ownership |
+| --- | --- | --- |
+| `none` | `prefect.yaml` only | Existing server and worker |
+| `centralized` | `Dockerfile`, `Makefile`, `docker-compose.yml` | Existing server and work pool |
+| `centralized` with `--include-centralized-server-compose` | The centralized files plus `docker-compose.server.yml` and `Dockerfile.worker` | Generated optional server stack |
+| `standalone` | `Dockerfile`, `Dockerfile.worker`, `Makefile`, one combined `docker-compose.yml` | Generated server, database, and worker |
+
+Every mode accepts `--prefect-server-url`, including its port. The default is
+`http://127.0.0.1:4200/api`; the port is validated and propagated to generated
+Compose health checks, worker settings, Makefile commands, and README guidance.
+The Prefect work pool remains an external resource and is never modeled as a
+Compose service.
+
+Centralized Docker output assumes the Prefect server container is named
+`prefect-server` and shares `prefect-server-network` on the same Docker daemon.
+The optional server Compose creates that network. Its `Dockerfile.worker` must
+move with `docker-compose.server.yml` when the server bundle is relocated. For
+a remote or non-Docker server, adjust the generated container API URL and
+Prefect deployment network settings as documented in the generated README.
+
 For local development of the CLI itself, install the cloned repository in
 editable mode instead:
 
@@ -98,19 +124,19 @@ business logic.
 
 ## Prefect Configuration
 
-The generated `prefect.yaml` follows the configuration produced by
-`prefect init` with the Docker-Git recipe selected by default. It includes
-generic build, push, pull, and deployment sections. The Docker image name and
-tag come from the CLI inputs.
+The generated `prefect.yaml` includes a runnable example deployment whose code
+is baked into a Docker image. The Docker image name and tag come from the CLI
+inputs. The default colocated worker uses the locally built image without a
+registry push or runtime Git clone.
 
 The file also includes a fully commented event-triggered deployment example.
 It is documentation only: no automation is registered and no event is
 emitted. Uncomment and adapt it only after the project has a real event
 producer and a deployment that should react to it.
 
-The `repository`, `branch`, `build_image`, and event payload expressions in
-`prefect.yaml` are resolved by Prefect during deployment. They are intentionally
-preserved through the earlier Cookiecutter rendering step.
+The `build_image` and event payload expressions in `prefect.yaml` are resolved
+by Prefect during deployment. They are intentionally preserved through the
+earlier Cookiecutter rendering step.
 
 ## Running the Generated Project
 

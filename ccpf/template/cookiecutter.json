@@ -5,5 +5,12 @@
   "python_version": "3.12",
   "prefect_version": "3.8.4",
   "image_name": "{{ cookiecutter.project_slug }}",
-  "image_tag": "latest"
+  "image_tag": "latest",
+  "deployment_mode": "centralized",
+  "prefect_server_url": "http://127.0.0.1:4200/api",
+  "prefect_container_server_url": "http://host.docker.internal:4200/api",
+  "prefect_server_port": 4200,
+  "include_centralized_server_compose": false,
+  "work_pool_name": "{{ cookiecutter.project_slug }}-pool",
+  "prefect_network_name": "prefect-server-network"
 }

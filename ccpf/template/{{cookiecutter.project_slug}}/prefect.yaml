@@ -7,6 +7,9 @@
 # Generic metadata about this project
 name: {{ cookiecutter.project_slug }}
 prefect-version: {{ cookiecutter.prefect_version }}
+# deployment-mode: {{ cookiecutter.deployment_mode }}
+# prefect-server-url: {{ cookiecutter.prefect_server_url }}
+# prefect-server-port: {{ cookiecutter.prefect_server_port }}
 
 # build section allows you to manage and build docker images
 build:
@@ -15,41 +18,42 @@ build:
       requires: prefect-docker>=0.3.1
       image_name: {{ cookiecutter.image_name }}
       tag: {{ cookiecutter.image_tag }}
-      dockerfile: auto
+      dockerfile: {{ "auto" if cookiecutter.deployment_mode == "none" else "Dockerfile" }}
 
-# push section allows you to manage if and how this project
-# is uploaded to remote locations
-push:
-  - prefect_docker.deployments.steps.push_docker_image:
-      requires: prefect-docker>=0.3.1
-      image_name: {% raw %}'{{ build_image.image_name }}'{% endraw %}
-      tag: {% raw %}'{{ build_image.tag }}'{% endraw %}
+# The default colocated Docker worker uses the image built above. Configure a
+# push step and registry when the worker runs on another Docker host.
+push: []
 
-# pull section allows you to provide instructions for cloning
-# this project in remote locations
-pull:
-  - prefect.deployments.steps.git_clone:
-      repository: {% raw %}'{{ repository }}'{% endraw %}
-      branch: {% raw %}'{{ branch }}'{% endraw %}
-      access_token: null
+# Project code is already baked into the image.
+pull: []
 
 # the deployments section allows you to provide configuration
 # for deploying flows
 deployments:
-  - name: null
+  - name: example-flow
     version: null
     tags: []
-    description: null
+    description: Example deployment generated with the project template.
     schedule: {}
-    flow_name: null
-    entrypoint: null
+    flow_name: example-flow
+    entrypoint: src/workflows/flows/example_flow.py:example_flow
     parameters: {}
     work_pool:
-      name: null
-      work_queue_name: null
-      job_variables:
-        # uses the `image` output from the `build_image` step
-        image: {% raw %}'{{ build_image.image }}'{% endraw %}
+       name: {{ cookiecutter.work_pool_name }}
+       work_queue_name: null
+       job_variables:
+         # uses the `image` output from the `build_image` step
+         image: {% raw %}'{{ build_image.image }}'{% endraw %}
+         image_pull_policy: Never
+{% if cookiecutter.deployment_mode != "none" %}
+         # Assumes prefect-server is on this network; change for another topology.
+         networks:
+           - {{ cookiecutter.prefect_network_name }}
+{% endif %}
+         env:
+           # Compose modes use service DNS; change this for a remote server.
+           PREFECT_API_URL: "{% if cookiecutter.deployment_mode != "none" %}http://prefect-server:{{ cookiecutter.prefect_server_port }}/api{% else %}{{ cookiecutter.prefect_container_server_url }}{% endif %}"
+           PREFECT_SERVER_PORT: "{{ cookiecutter.prefect_server_port }}"
 
 # Example event-triggered deployment. This block is documentation only.
 # Uncomment and customize it when the project has a real event producer.
