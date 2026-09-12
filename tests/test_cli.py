@@ -259,7 +259,7 @@ def test_compose_topology_and_endpoint_propagation(tmp_path: Path) -> None:
     assert compose["networks"]["prefect-network"]["name"] == (
         "prefect-server-network"
     )
-    assert prefect["deployments"][0]["work_pool"]["name"] == "prefect-project-pool"
+    assert prefect["deployments"][0]["work_pool"]["name"] == "local-docker-pool"
     job_variables = prefect["deployments"][0]["work_pool"]["job_variables"]
     assert prefect["deployments"][0]["entrypoint"] == (
         "src/workflows/flows/example_flow.py:example_flow"
@@ -297,6 +297,8 @@ def test_server_compose_contains_prefect_infrastructure(tmp_path: Path) -> None:
         "prefect-worker"
     ]["volumes"]
     worker = server["services"]["prefect-worker"]
+    assert worker["container_name"] == "central-docker-worker"
+    assert worker["hostname"] == "central-docker-worker"
     assert worker["build"] == {"context": ".", "dockerfile": "Dockerfile.worker"}
     assert worker["restart"] == "unless-stopped"
     assert server["services"]["prefect-server"]["restart"] == "unless-stopped"
@@ -312,6 +314,7 @@ def test_centralized_containers_use_shared_network_and_uv(tmp_path: Path) -> Non
     deploy = compose["services"]["deploy"]
     job_variables = prefect["deployments"][0]["work_pool"]["job_variables"]
 
+    assert set(compose["services"]) == {"deploy"}
     assert deploy["environment"]["PREFECT_API_URL"] == (
         "${PREFECT_CONTAINER_API_URL:-http://prefect-server:4200/api}"
     )
@@ -379,6 +382,7 @@ def test_centralized_server_make_targets_follow_optional_compose(
     worker_dockerfile = (project_dir / "Dockerfile.worker").read_text()
     assert 'uv pip install --system "prefect[docker]==3.8.4"' in worker_dockerfile
     assert "RUN pip install" not in worker_dockerfile
+    assert "job-notifier" not in worker_dockerfile
 
 
 def test_readme_preserves_project_sections_and_changes_deployment_section(

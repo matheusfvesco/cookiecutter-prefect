@@ -11,6 +11,6 @@
   "prefect_container_server_url": "http://host.docker.internal:4200/api",
   "prefect_server_port": 4200,
   "include_centralized_server_compose": false,
-  "work_pool_name": "{{ cookiecutter.project_slug }}-pool",
+  "work_pool_name": "local-docker-pool",
   "prefect_network_name": "prefect-server-network"
 }

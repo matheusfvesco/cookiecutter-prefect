@@ -43,8 +43,10 @@ network and use `http://prefect-server:{{ cookiecutter.prefect_server_port }}/ap
 {% if cookiecutter.include_centralized_server_compose %}
 The optional `docker-compose.server.yml` provides that server stack and creates
 the named network. `Dockerfile.worker` builds the worker with the required
-`prefect-docker` integration. Keep both files together if the server bundle is
-moved to another directory or repository:
+`prefect-docker` integration. It is one project-agnostic worker named
+`central-docker-worker` for the shared `local-docker-pool`; project dependencies
+remain in each deployment image. Keep both files together if the server bundle
+is moved to another directory or repository:
 
 ```bash
 make server-up
@@ -127,26 +129,28 @@ real event producer and a deployment that should react to it.
 
 ### Deploying a Worker
 
-Workers poll a Prefect work pool and start flow runs. The Docker deployment
-expects a Docker work pool and a worker host with access to a Docker daemon.
+Workers poll the shared `local-docker-pool` and start flow runs. The Docker
+deployment expects a worker host with access to a Docker daemon.
 
 ```bash
-# Create a Docker work pool once, or use an existing one.
-uv run prefect work-pool create --type docker {{ cookiecutter.project_slug }}-pool
+# Create the shared Docker work pool once, or use an existing one.
+uv run prefect work-pool create --type docker local-docker-pool
 
 # Set the same pool name in prefect.yaml, then create the deployment.
 uv run prefect deploy src/workflows/flows/example_flow.py:example_flow \
   --name example-flow \
-  --pool {{ cookiecutter.project_slug }}-pool
+  --pool local-docker-pool
 
 # Start the worker on the machine that can run Docker containers.
-uv run prefect worker start --pool {{ cookiecutter.project_slug }}-pool --type docker
+uv run prefect worker start --pool local-docker-pool --type docker
 ```
 
 Configure the Prefect API or log in to Prefect Cloud before starting the
-worker. The pool name used by `prefect deploy`, `prefect.yaml`, and
-`prefect worker start` must match. Run the worker as a long-running process or
-service in the environment where flow runs should execute.
+worker. The shared pool can execute deployments from multiple projects; each
+deployment supplies its own image and dependencies. The pool name used by
+`prefect deploy`, `prefect.yaml`, and `prefect worker start` must match. Run
+the worker as a long-running process or service in the environment where flow
+runs should execute.
 
 The default deployment builds an image on the Docker host used by the worker
 and does not push it. If the worker uses another Docker host, add a Prefect

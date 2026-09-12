@@ -74,10 +74,13 @@ Compose service.
 
 Centralized Docker output assumes the Prefect server container is named
 `prefect-server` and shares `prefect-server-network` on the same Docker daemon.
-The optional server Compose creates that network. Its `Dockerfile.worker` must
-move with `docker-compose.server.yml` when the server bundle is relocated. For
-a remote or non-Docker server, adjust the generated container API URL and
-Prefect deployment network settings as documented in the generated README.
+The optional server Compose creates that network and runs one project-agnostic
+worker named `central-docker-worker` for the shared `local-docker-pool`. Its
+`Dockerfile.worker` must move with `docker-compose.server.yml` when the server
+bundle is relocated. Project-specific dependencies stay in each application
+image. For a remote or non-Docker server, adjust the generated container API
+URL and Prefect deployment network settings as documented in the generated
+README.
 
 For local development of the CLI itself, install the cloned repository in
 editable mode instead:
@@ -182,22 +185,25 @@ export PREFECT_API_URL=http://127.0.0.1:4200/api
 
 ## Deploying a Worker
 
-The Docker-Git configuration expects a Docker work pool and a worker running
+The Docker configuration expects the shared `local-docker-pool` Docker work
+pool and a worker running
 on a host with access to a Docker daemon. Configure the Prefect API or log in
 to Prefect Cloud before using these commands.
 
 ```bash
-uv run prefect work-pool create --type docker project-slug-pool
+uv run prefect work-pool create --type docker local-docker-pool
 
 uv run prefect deploy src/workflows/flows/example_flow.py:example_flow \
   --name example-flow \
-  --pool project-slug-pool
+  --pool local-docker-pool
 
-uv run prefect worker start --pool project-slug-pool --type docker
+uv run prefect worker start --pool local-docker-pool --type docker
 ```
 
-The work pool name must match the value in `prefect.yaml` and the pool used by
-`prefect deploy`. Run the worker as a long-running process or service in the
+The shared work pool name must match the value in `prefect.yaml` and the pool
+used by `prefect deploy`. A single central Docker worker can execute
+deployments from multiple projects; each deployment supplies its own image and
+dependencies. Run the worker as a long-running process or service in the
 environment where flow runs should execute. The generated deployment uses
 Docker build and push steps, so configure registry credentials when deploying
 to a remote environment.

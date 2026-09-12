@@ -38,6 +38,8 @@ services:
       - prefect-network
 
   prefect-worker:
+    container_name: central-docker-worker
+    hostname: central-docker-worker
     build:
       context: .
       dockerfile: Dockerfile.worker

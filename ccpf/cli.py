@@ -178,7 +178,7 @@ def main(
         ),
         "prefect_server_port": prefect_server_port,
         "include_centralized_server_compose": include_centralized_server_compose,
-        "work_pool_name": f"{slug}-pool",
+        "work_pool_name": "local-docker-pool",
         "prefect_network_name": "prefect-server-network",
     }
 
