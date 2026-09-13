@@ -13,7 +13,7 @@ create-pool:
 		PREFECT_API_URL=$(PREFECT_API_URL) uv run prefect work-pool create --type docker $(WORK_POOL)
 {% if cookiecutter.deployment_mode == "standalone" %}
 up:
-	docker compose up -d prefect-server postgres prefect-worker
+	docker compose up -d prefect-server prefect-postgres prefect-worker
 
 down:
 	docker compose down

@@ -39,21 +39,22 @@ deployments:
     entrypoint: src/workflows/flows/example_flow.py:example_flow
     parameters: {}
     work_pool:
-       name: {{ cookiecutter.work_pool_name }}
-       work_queue_name: null
-       job_variables:
-         # uses the `image` output from the `build_image` step
-         image: {% raw %}'{{ build_image.image }}'{% endraw %}
-         image_pull_policy: Never
+      name: {{ cookiecutter.work_pool_name }}
+      work_queue_name: null
+      job_variables:
+        # uses the `image` output from the `build_image` step
+        image: {% raw %}'{{ build_image.image }}'{% endraw %}
+        image_pull_policy: Never
+        auto_remove: true
 {% if cookiecutter.deployment_mode != "none" %}
-         # Assumes prefect-server is on this network; change for another topology.
-         networks:
-           - {{ cookiecutter.prefect_network_name }}
+        # Assumes prefect-server is on this network; change for another topology.
+        networks:
+          - {{ cookiecutter.prefect_network_name }}
 {% endif %}
-         env:
-           # Compose modes use service DNS; change this for a remote server.
-           PREFECT_API_URL: "{% if cookiecutter.deployment_mode != "none" %}http://prefect-server:{{ cookiecutter.prefect_server_port }}/api{% else %}{{ cookiecutter.prefect_container_server_url }}{% endif %}"
-           PREFECT_SERVER_PORT: "{{ cookiecutter.prefect_server_port }}"
+        env:
+          # Compose modes use service DNS; change this for a remote server.
+          PREFECT_API_URL: "{% if cookiecutter.deployment_mode != "none" %}http://prefect-server:{{ cookiecutter.prefect_server_port }}/api{% else %}{{ cookiecutter.prefect_container_server_url }}{% endif %}"
+          PREFECT_SERVER_PORT: "{{ cookiecutter.prefect_server_port }}"
 
 # Example event-triggered deployment. This block is documentation only.
 # Uncomment and customize it when the project has a real event producer.

@@ -82,6 +82,12 @@ image. For a remote or non-Docker server, adjust the generated container API
 URL and Prefect deployment network settings as documented in the generated
 README.
 
+Generated server ports bind to `127.0.0.1`. Before exposing Prefect on another
+interface, configure authentication, TLS through a reverse proxy, and secure
+credentials. See [Prefect's security guidance](https://docs.prefect.io/v3/advanced/security-settings).
+Generated Compose commands load `./.env`; copy `.env.example` to `.env` and
+replace its database password before starting Prefect infrastructure.
+
 For local development of the CLI itself, install the cloned repository in
 editable mode instead:
 
@@ -204,9 +210,10 @@ The shared work pool name must match the value in `prefect.yaml` and the pool
 used by `prefect deploy`. A single central Docker worker can execute
 deployments from multiple projects; each deployment supplies its own image and
 dependencies. Run the worker as a long-running process or service in the
-environment where flow runs should execute. The generated deployment uses
-Docker build and push steps, so configure registry credentials when deploying
-to a remote environment.
+environment where flow runs should execute. The generated deployment builds
+the image locally and does not push it. For a remote worker, add a Prefect
+Docker push step, configure registry credentials, and use an appropriate image
+pull policy.
 
 ## Development
 

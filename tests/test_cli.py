@@ -108,6 +108,67 @@ def test_cli_help_is_available() -> None:
     assert "Docker image name" in result.output
 
 
+@pytest.mark.parametrize("version", ["3", "3.x", "3.12.1.2", "latest"])
+def test_invalid_python_version_fails_before_rendering(
+    tmp_path: Path, version: str
+) -> None:
+    result = CliRunner().invoke(
+        main,
+        [
+            "--no-input",
+            "--python-version",
+            version,
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "must be a numeric major.minor or major.minor.patch version" in result.output
+    assert not (tmp_path / "prefect-project").exists()
+
+
+@pytest.mark.parametrize(
+    "version",
+    ["3", "3.8", "3.8.4.1", "3.8.4.dev1", "3.8.4rc1", "latest"],
+)
+def test_invalid_prefect_version_fails_before_rendering(
+    tmp_path: Path, version: str
+) -> None:
+    result = CliRunner().invoke(
+        main,
+        [
+            "--no-input",
+            "--prefect-version",
+            version,
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "must be a numeric major.minor.patch version" in result.output
+    assert not (tmp_path / "prefect-project").exists()
+
+
+def test_existing_destination_emits_data_loss_warning(tmp_path: Path) -> None:
+    output_dir = tmp_path / "output"
+    render_project(tmp_path)
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "--no-input",
+            "--output-dir",
+            str(output_dir),
+            "--overwrite-if-exists",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "already exists; existing data may be lost" in result.output
+
+
 @pytest.mark.parametrize(
     ("args", "present", "absent"),
     [
@@ -245,13 +306,44 @@ def test_compose_topology_and_endpoint_propagation(tmp_path: Path) -> None:
     prefect = yaml.safe_load((project_dir / "prefect.yaml").read_text())
     services = compose["services"]
 
-    assert {"deploy", "prefect-server", "postgres", "prefect-worker"} <= services.keys()
+    assert {
+        "deploy",
+        "prefect-server",
+        "prefect-postgres",
+        "prefect-worker",
+    } <= services.keys()
+    assert "postgres" not in services
     assert services["deploy"].get("restart") is None
     assert services["prefect-server"]["restart"] == "unless-stopped"
-    assert services["postgres"]["restart"] == "unless-stopped"
+    assert services["prefect-postgres"]["restart"] == "unless-stopped"
     assert services["prefect-worker"]["restart"] == "unless-stopped"
-    assert compose["volumes"] == {"prefect-postgres": None}
-    assert services["prefect-server"]["ports"] == ["5420:5420"]
+    assert compose["volumes"] == {"prefect-postgres-data": None}
+    assert services["prefect-server"]["ports"] == ["127.0.0.1:5420:5420"]
+    database_url = services["prefect-server"]["environment"][
+        "PREFECT_SERVER_DATABASE_CONNECTION_URL"
+    ]
+    assert database_url.startswith("postgresql+asyncpg://${PREFECT_DB_USER:?")
+    assert "${PREFECT_DB_PASSWORD:?" in database_url
+    assert "@prefect-postgres:5432/${PREFECT_DB_NAME:?" in database_url
+    assert ":-" not in database_url
+    assert services["prefect-server"]["env_file"] == "./.env"
+    assert services["prefect-server"]["networks"] == [
+        "prefect-network",
+        "prefect-backend",
+    ]
+    database = services["prefect-postgres"]
+    assert database["networks"] == ["prefect-backend"]
+    assert database["env_file"] == "./.env"
+    for variable in ("POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB"):
+        assert database["environment"][variable].startswith("${PREFECT_DB_")
+        assert ":?" in database["environment"][variable]
+        assert ":-" not in database["environment"][variable]
+    assert services["prefect-worker"]["networks"] == ["prefect-network"]
+    assert "--name prefect-project-docker-worker" in services["prefect-worker"][
+        "command"
+    ]
+    assert "--with-healthcheck" in services["prefect-worker"]["command"]
+    assert "healthcheck" in services["prefect-worker"]
     assert services["prefect-server"]["environment"]["PREFECT_SERVER_UI_API_URL"] == (
         "http://prefect.example.test:5420/api"
     )
@@ -267,6 +359,7 @@ def test_compose_topology_and_endpoint_propagation(tmp_path: Path) -> None:
     assert prefect["push"] == []
     assert prefect["pull"] == []
     assert job_variables["image_pull_policy"] == "Never"
+    assert job_variables["auto_remove"] is True
     assert job_variables["networks"] == ["prefect-server-network"]
     assert job_variables["env"]["PREFECT_API_URL"] == (
         "http://prefect-server:5420/api"
@@ -289,9 +382,10 @@ def test_server_compose_contains_prefect_infrastructure(tmp_path: Path) -> None:
     )
 
     server = yaml.safe_load((project_dir / "docker-compose.server.yml").read_text())
-    assert {"prefect-server", "postgres", "prefect-worker"} <= server[
+    assert {"prefect-server", "prefect-postgres", "prefect-worker"} <= server[
         "services"
     ].keys()
+    assert "postgres" not in server["services"]
     assert "healthcheck" in server["services"]["prefect-server"]
     assert "/var/run/docker.sock:/var/run/docker.sock" in server["services"][
         "prefect-worker"
@@ -301,9 +395,32 @@ def test_server_compose_contains_prefect_infrastructure(tmp_path: Path) -> None:
     assert worker["hostname"] == "central-docker-worker"
     assert worker["build"] == {"context": ".", "dockerfile": "Dockerfile.worker"}
     assert worker["restart"] == "unless-stopped"
+    assert "--name central-docker-worker" in worker["command"]
+    assert "--with-healthcheck" in worker["command"]
+    assert "healthcheck" in worker
+    assert server["services"]["prefect-server"]["ports"] == [
+        "127.0.0.1:4200:4200"
+    ]
+    assert server["services"]["prefect-server"]["networks"] == [
+        "prefect-network",
+        "prefect-backend",
+    ]
+    assert server["services"]["prefect-postgres"]["networks"] == [
+        "prefect-backend"
+    ]
+    assert server["services"]["prefect-worker"]["networks"] == ["prefect-network"]
+    assert server["networks"]["prefect-backend"] == {"internal": True}
     assert server["services"]["prefect-server"]["restart"] == "unless-stopped"
-    assert server["services"]["postgres"]["restart"] == "unless-stopped"
-    assert server["volumes"] == {"prefect-postgres": None}
+    assert server["services"]["prefect-postgres"]["restart"] == "unless-stopped"
+    assert server["volumes"] == {"prefect-postgres-data": None}
+
+    for service_name in ("prefect-server", "prefect-postgres"):
+        assert server["services"][service_name]["env_file"] == "./.env"
+    server_database_url = server["services"]["prefect-server"]["environment"][
+        "PREFECT_SERVER_DATABASE_CONNECTION_URL"
+    ]
+    assert "${PREFECT_DB_PASSWORD:?" in server_database_url
+    assert ":-" not in server_database_url
 
 
 def test_centralized_containers_use_shared_network_and_uv(tmp_path: Path) -> None:
@@ -333,8 +450,12 @@ def test_centralized_containers_use_shared_network_and_uv(tmp_path: Path) -> Non
     assert "RUN uv sync --no-dev" in dockerfile
     assert "pip install" not in dockerfile
 
+    dockerignore = (project_dir / ".dockerignore").read_text()
+    assert "data/" in dockerignore.splitlines()
+
     makefile = (project_dir / "Makefile").read_text()
     assert "PREFECT_CONTAINER_API_URL=$(PREFECT_CONTAINER_API_URL)" in makefile
+    assert "docker compose --env-file .env" in makefile
     assert "server-up:" not in makefile
     assert "server-down:" not in makefile
 

@@ -53,7 +53,7 @@ make server-up
 ```
 The server, PostgreSQL, and worker services use `restart: unless-stopped`, so
 they restart after a Docker daemon or host reboot. The PostgreSQL data is
-stored in the named `prefect-postgres` volume; do not use `docker compose down
+stored in the named `prefect-postgres-data` volume; do not use `docker compose down
 -v` unless you intend to delete it.
 {% else %}
 Create that network and attach the existing Prefect server container before
@@ -74,6 +74,17 @@ Start the standalone environment with:
 make up
 ```
 {% endif %}
+
+Generated server ports bind to `127.0.0.1` by default. Before exposing Prefect
+elsewhere, configure authentication, TLS through a reverse proxy, and secure
+credentials. See [Prefect's security guidance](https://docs.prefect.io/v3/advanced/security-settings).
+
+Copy the deployment environment file and replace its database password before
+running Compose:
+
+```bash
+cp .env.example .env
+```
 
 Ensure the external work pool exists and register deployments with:
 

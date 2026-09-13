@@ -50,6 +50,24 @@ def _deployment_mode(value: str | None, no_input: bool) -> str:
     )
 
 
+def _python_version(value: str) -> str:
+    if not re.fullmatch(r"\d+\.\d+(?:\.\d+)?", value):
+        raise click.BadParameter(
+            "must be a numeric major.minor or major.minor.patch version",
+            param_hint="--python-version",
+        )
+    return value
+
+
+def _prefect_version(value: str) -> str:
+    if not re.fullmatch(r"\d+\.\d+\.\d+", value):
+        raise click.BadParameter(
+            "must be a numeric major.minor.patch version",
+            param_hint="--prefect-version",
+        )
+    return value
+
+
 def _server_endpoint(value: str) -> tuple[str, int]:
     parsed = urlsplit(value)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
@@ -137,9 +155,11 @@ def main(
     python_version = _value(
         python_version, "Python version", DEFAULT_PYTHON_VERSION, no_input
     )
+    python_version = _python_version(python_version)
     prefect_version = _value(
         prefect_version, "Prefect version", DEFAULT_PREFECT_VERSION, no_input
     )
+    prefect_version = _prefect_version(prefect_version)
 
     slug = project_slug(project_name)
     image_name = _value(image_name, "Docker image name", slug, no_input)
@@ -181,6 +201,13 @@ def main(
         "work_pool_name": "local-docker-pool",
         "prefect_network_name": "prefect-server-network",
     }
+
+    destination = output_dir / slug
+    if destination.exists():
+        click.echo(
+            f"Warning: {destination} already exists; existing data may be lost.",
+            err=True,
+        )
 
     generated_path = cookiecutter(
         str(TEMPLATE_PATH),

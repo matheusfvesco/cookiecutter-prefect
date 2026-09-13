@@ -19,11 +19,12 @@ services:
   prefect-server:
     image: prefecthq/prefect:{{ cookiecutter.prefect_version }}-python{{ cookiecutter.python_version.split('.')[0] }}.{{ cookiecutter.python_version.split('.')[1] }}
     command: prefect server start --host 0.0.0.0 --port {{ cookiecutter.prefect_server_port }}
+    env_file: ./.env
     environment:
-      PREFECT_API_DATABASE_CONNECTION_URL: postgresql+asyncpg://prefect:prefect@postgres:5432/prefect
+      PREFECT_SERVER_DATABASE_CONNECTION_URL: "postgresql+asyncpg://${PREFECT_DB_USER:?Set PREFECT_DB_USER in .env}:${PREFECT_DB_PASSWORD:?Set PREFECT_DB_PASSWORD in .env}@prefect-postgres:5432/${PREFECT_DB_NAME:?Set PREFECT_DB_NAME in .env}"
       PREFECT_SERVER_UI_API_URL: {{ cookiecutter.prefect_server_url }}
     ports:
-      - "{{ cookiecutter.prefect_server_port }}:{{ cookiecutter.prefect_server_port }}"
+      - "127.0.0.1:{{ cookiecutter.prefect_server_port }}:{{ cookiecutter.prefect_server_port }}"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:{{ cookiecutter.prefect_server_port }}/api/health')\""]
       interval: 15s
@@ -31,34 +32,36 @@ services:
       retries: 5
       start_period: 30s
     depends_on:
-      postgres:
+      prefect-postgres:
         condition: service_healthy
     restart: unless-stopped
     networks:
       - prefect-network
+      - prefect-backend
 
-  postgres:
+  prefect-postgres:
     image: postgres:16
+    env_file: ./.env
     environment:
-      POSTGRES_USER: prefect
-      POSTGRES_PASSWORD: prefect
-      POSTGRES_DB: prefect
+      POSTGRES_USER: "${PREFECT_DB_USER:?Set PREFECT_DB_USER in .env}"
+      POSTGRES_PASSWORD: "${PREFECT_DB_PASSWORD:?Set PREFECT_DB_PASSWORD in .env}"
+      POSTGRES_DB: "${PREFECT_DB_NAME:?Set PREFECT_DB_NAME in .env}"
     volumes:
-      - prefect-postgres:/var/lib/postgresql/data
+      - prefect-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U prefect -d prefect"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
     networks:
-      - prefect-network
+      - prefect-backend
 
   prefect-worker:
     build:
       context: .
       dockerfile: Dockerfile.worker
-    command: prefect worker start --pool {{ cookiecutter.work_pool_name }} --type docker
+    command: prefect worker start --pool {{ cookiecutter.work_pool_name }} --type docker --name {{ cookiecutter.project_slug }}-docker-worker --with-healthcheck
     environment:
       PREFECT_API_URL: http://prefect-server:{{ cookiecutter.prefect_server_port }}/api
       PREFECT_SERVER_PORT: {{ cookiecutter.prefect_server_port }}
@@ -69,14 +72,22 @@ services:
         condition: service_healthy
     networks:
       - prefect-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8080/health', timeout=1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     restart: unless-stopped
 
 volumes:
-  prefect-postgres:
+  prefect-postgres-data:
 
 networks:
   prefect-network:
     name: {{ cookiecutter.prefect_network_name }}
+  prefect-backend:
+    internal: true
 {% else %}
 
 networks:
