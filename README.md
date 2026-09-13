@@ -53,6 +53,41 @@ command is available as a Python module:
 python -m ccpf
 ```
 
+## Deployment Modes
+
+The generator defaults to `centralized`, which creates an application
+deployment helper for an existing Prefect server and Docker work pool. Use
+`--deployment-mode` to choose a different artifact set:
+
+| Mode | Generated deployment files | Server ownership |
+| --- | --- | --- |
+| `none` | `prefect.yaml` only | Existing server and worker |
+| `centralized` | `Dockerfile`, `Makefile`, `docker-compose.yml` | Existing server and work pool |
+| `centralized` with `--include-centralized-server-compose` | The centralized files plus `docker-compose.server.yml` and `Dockerfile.worker` | Generated optional server stack |
+| `standalone` | `Dockerfile`, `Dockerfile.worker`, `Makefile`, one combined `docker-compose.yml` | Generated server, database, and worker |
+
+Every mode accepts `--prefect-server-url`, including its port. The default is
+`http://127.0.0.1:4200/api`; the port is validated and propagated to generated
+Compose health checks, worker settings, Makefile commands, and README guidance.
+The Prefect work pool remains an external resource and is never modeled as a
+Compose service.
+
+Centralized Docker output assumes the Prefect server container is named
+`prefect-server` and shares `prefect-server-network` on the same Docker daemon.
+The optional server Compose creates that network and runs one project-agnostic
+worker named `central-docker-worker` for the shared `local-docker-pool`. Its
+`Dockerfile.worker` must move with `docker-compose.server.yml` when the server
+bundle is relocated. Project-specific dependencies stay in each application
+image. For a remote or non-Docker server, adjust the generated container API
+URL and Prefect deployment network settings as documented in the generated
+README.
+
+Generated server ports bind to `127.0.0.1`. Before exposing Prefect on another
+interface, configure authentication, TLS through a reverse proxy, and secure
+credentials. See [Prefect's security guidance](https://docs.prefect.io/v3/advanced/security-settings).
+Generated Compose commands load `./.env`; copy `.env.example` to `.env` and
+replace its database password before starting Prefect infrastructure.
+
 For local development of the CLI itself, install the cloned repository in
 editable mode instead:
 
@@ -98,19 +133,19 @@ business logic.
 
 ## Prefect Configuration
 
-The generated `prefect.yaml` follows the configuration produced by
-`prefect init` with the Docker-Git recipe selected by default. It includes
-generic build, push, pull, and deployment sections. The Docker image name and
-tag come from the CLI inputs.
+The generated `prefect.yaml` includes a runnable example deployment whose code
+is baked into a Docker image. The Docker image name and tag come from the CLI
+inputs. The default colocated worker uses the locally built image without a
+registry push or runtime Git clone.
 
 The file also includes a fully commented event-triggered deployment example.
 It is documentation only: no automation is registered and no event is
 emitted. Uncomment and adapt it only after the project has a real event
 producer and a deployment that should react to it.
 
-The `repository`, `branch`, `build_image`, and event payload expressions in
-`prefect.yaml` are resolved by Prefect during deployment. They are intentionally
-preserved through the earlier Cookiecutter rendering step.
+The `build_image` and event payload expressions in `prefect.yaml` are resolved
+by Prefect during deployment. They are intentionally preserved through the
+earlier Cookiecutter rendering step.
 
 ## Running the Generated Project
 
@@ -156,25 +191,29 @@ export PREFECT_API_URL=http://127.0.0.1:4200/api
 
 ## Deploying a Worker
 
-The Docker-Git configuration expects a Docker work pool and a worker running
+The Docker configuration expects the shared `local-docker-pool` Docker work
+pool and a worker running
 on a host with access to a Docker daemon. Configure the Prefect API or log in
 to Prefect Cloud before using these commands.
 
 ```bash
-uv run prefect work-pool create --type docker project-slug-pool
+uv run prefect work-pool create --type docker local-docker-pool
 
 uv run prefect deploy src/workflows/flows/example_flow.py:example_flow \
   --name example-flow \
-  --pool project-slug-pool
+  --pool local-docker-pool
 
-uv run prefect worker start --pool project-slug-pool --type docker
+uv run prefect worker start --pool local-docker-pool --type docker
 ```
 
-The work pool name must match the value in `prefect.yaml` and the pool used by
-`prefect deploy`. Run the worker as a long-running process or service in the
-environment where flow runs should execute. The generated deployment uses
-Docker build and push steps, so configure registry credentials when deploying
-to a remote environment.
+The shared work pool name must match the value in `prefect.yaml` and the pool
+used by `prefect deploy`. A single central Docker worker can execute
+deployments from multiple projects; each deployment supplies its own image and
+dependencies. Run the worker as a long-running process or service in the
+environment where flow runs should execute. The generated deployment builds
+the image locally and does not push it. For a remote worker, add a Prefect
+Docker push step, configure registry credentials, and use an appropriate image
+pull policy.
 
 ## Development
 

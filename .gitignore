@@ -8,6 +8,10 @@ wheels/
 
 # Virtual environments
 .venv
+venv/
+
+# Local configuration
+.env*
 
 # Tools
 .ruff_cache
@@ -33,3 +37,11 @@ skills-lock.json
 
 # Agent instructions
 AGENTS.md
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+.vscode/
+.idea/

@@ -1,0 +1,3 @@
+FROM prefecthq/prefect:{{ cookiecutter.prefect_version }}-python{{ cookiecutter.python_version.split('.')[0] }}.{{ cookiecutter.python_version.split('.')[1] }}
+
+RUN uv pip install --system "prefect[docker]=={{ cookiecutter.prefect_version }}"

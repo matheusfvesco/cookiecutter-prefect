@@ -22,34 +22,96 @@ uv run python -m src.workflows.flows.example_flow
 
 Replace the example logic, task, and flow with the project implementation.
 
-## Local Prefect Server
+{% if cookiecutter.deployment_mode == "none" %}
+## Prefect Server
 
-If a Prefect Server is not already running, start this ephemeral development
-instance in a separate terminal:
+This project does not generate Docker deployment artifacts. Configure the
+Prefect CLI with an existing server at `{{ cookiecutter.prefect_server_url }}`.
+{% else %}
+## Deployment
 
-For persistent development or shared environments, the recommended setup is a
-Docker Compose deployment with PostgreSQL as the Prefect database. The command
-below is only a quick local example and intentionally does not provide
-persistent storage.
+The generated deployment targets `{{ cookiecutter.prefect_server_url }}` on port
+`{{ cookiecutter.prefect_server_port }}` and uses the external Docker work pool
+`{{ cookiecutter.work_pool_name }}`.
+
+{% if cookiecutter.deployment_mode == "centralized" %}
+`docker-compose.yml` is the application deployment helper. The Prefect server,
+PostgreSQL database, and Docker worker are expected to be managed separately.
+By default, the helper and flow-run containers expect a container named
+`prefect-server` on the external `{{ cookiecutter.prefect_network_name }}` Docker
+network and use `http://prefect-server:{{ cookiecutter.prefect_server_port }}/api`.
+{% if cookiecutter.include_centralized_server_compose %}
+The optional `docker-compose.server.yml` provides that server stack and creates
+the named network. `Dockerfile.worker` builds the worker with the required
+`prefect-docker` integration. It is one project-agnostic worker named
+`central-docker-worker` for the shared `local-docker-pool`; project dependencies
+remain in each deployment image. Keep both files together if the server bundle
+is moved to another directory or repository:
+
+```bash
+make server-up
+```
+The server, PostgreSQL, and worker services use `restart: unless-stopped`, so
+they restart after a Docker daemon or host reboot. The PostgreSQL data is
+stored in the named `prefect-postgres-data` volume; do not use `docker compose down
+-v` unless you intend to delete it.
+{% else %}
+Create that network and attach the existing Prefect server container before
+running `make deploy`. This project does not generate `Dockerfile.worker`
+because the external server environment owns its worker image.
+{% endif %}
+If Prefect runs on another host or outside Docker, change
+`PREFECT_CONTAINER_API_URL`, the deployment's `PREFECT_API_URL`, and its
+`networks` job variable in `prefect.yaml` for that topology.
+{% else %}
+`docker-compose.yml` contains the application deployment helper, Prefect server,
+PostgreSQL database, and Docker worker. `Dockerfile.worker` installs the
+required `prefect-docker` integration with `uv`.
+
+Start the standalone environment with:
+
+```bash
+make up
+```
+{% endif %}
+
+Generated server ports bind to `127.0.0.1` by default. Before exposing Prefect
+elsewhere, configure authentication, TLS through a reverse proxy, and secure
+credentials. See [Prefect's security guidance](https://docs.prefect.io/v3/advanced/security-settings).
+
+Copy the deployment environment file and replace its database password before
+running Compose:
+
+```bash
+cp .env.example .env
+```
+
+Ensure the external work pool exists and register deployments with:
+
+```bash
+make create-pool
+make deploy
+```
+
+`make create-pool` is safe to run again when the pool already exists. In
+standalone mode, the worker also creates a missing pool automatically.
+
+If a Prefect Server is not already running, use this temporary local server
+without Compose as a development fallback:
 
 ```bash
 docker run --rm --name prefect-server \
-  -p 4200:4200 \
+  -p {{ cookiecutter.prefect_server_port }}:{{ cookiecutter.prefect_server_port }} \
   prefecthq/prefect:{{ cookiecutter.prefect_version }}-python{{ cookiecutter.python_version.split('.')[0] }}.{{ cookiecutter.python_version.split('.')[1] }} \
-  prefect server start --host 0.0.0.0 --port 4200
+  prefect server start --host 0.0.0.0 --port {{ cookiecutter.prefect_server_port }}
 ```
 
 This container uses temporary local storage. Its server data, deployments, and
 flow-run history are lost when the container stops or is removed. It is only a
 development example, not a persistent or production server.
 
-In another terminal, point the Prefect CLI and worker at it:
-
-```bash
-export PREFECT_API_URL=http://127.0.0.1:4200/api
-```
-
-The Prefect UI is available at `http://127.0.0.1:4200`.
+The Prefect UI is available at `http://127.0.0.1:{{ cookiecutter.prefect_server_port }}`.
+{% endif %}
 
 ## Project Layout
 
@@ -64,12 +126,12 @@ The Prefect UI is available at `http://127.0.0.1:4200`.
 - `tests/` separates common, logic, schema, Prefect, integration, validation,
   and regression tests.
 
+{% if cookiecutter.deployment_mode != "none" %}
 ## Prefect Deployments
 
-`prefect.yaml` follows the structure created by `prefect init` using the
-Docker-Git setup. The image name and tag are configured during project
-generation. Edit the deployment entry under `deployments` when a flow is
-ready to deploy, including its entrypoint and work pool name.
+`prefect.yaml` includes a runnable `example-flow` deployment whose code is
+baked into the generated image. The image name and tag are configured during
+project generation. Replace the example deployment as the project evolves.
 
 The file also contains a fully commented event-trigger example. It is
 documentation only: it does not register an automation or emit an event.
@@ -78,27 +140,31 @@ real event producer and a deployment that should react to it.
 
 ### Deploying a Worker
 
-Workers poll a Prefect work pool and start flow runs. The Docker-Git setup
-expects a Docker work pool and a worker host with access to a Docker daemon.
+Workers poll the shared `local-docker-pool` and start flow runs. The Docker
+deployment expects a worker host with access to a Docker daemon.
 
 ```bash
-# Create a Docker work pool once, or use an existing one.
-uv run prefect work-pool create --type docker {{ cookiecutter.project_slug }}-pool
+# Create the shared Docker work pool once, or use an existing one.
+uv run prefect work-pool create --type docker local-docker-pool
 
 # Set the same pool name in prefect.yaml, then create the deployment.
 uv run prefect deploy src/workflows/flows/example_flow.py:example_flow \
   --name example-flow \
-  --pool {{ cookiecutter.project_slug }}-pool
+  --pool local-docker-pool
 
 # Start the worker on the machine that can run Docker containers.
-uv run prefect worker start --pool {{ cookiecutter.project_slug }}-pool --type docker
+uv run prefect worker start --pool local-docker-pool --type docker
 ```
 
 Configure the Prefect API or log in to Prefect Cloud before starting the
-worker. The pool name used by `prefect deploy`, `prefect.yaml`, and
-`prefect worker start` must match. Run the worker as a long-running process or
-service in the environment where flow runs should execute.
+worker. The shared pool can execute deployments from multiple projects; each
+deployment supplies its own image and dependencies. The pool name used by
+`prefect deploy`, `prefect.yaml`, and `prefect worker start` must match. Run
+the worker as a long-running process or service in the environment where flow
+runs should execute.
 
-The deployment configuration includes Docker build and push steps. Configure
-the image registry and credentials in the deployment environment before using
-those steps in a remote environment.
+The default deployment builds an image on the Docker host used by the worker
+and does not push it. If the worker uses another Docker host, add a Prefect
+Docker push step, configure registry credentials, and change the image pull
+policy to one appropriate for that registry.
+{% endif %}

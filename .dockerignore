@@ -9,6 +9,7 @@ dist/
 .pytest_cache/
 .ruff_cache/
 .env*
-data/
 coverage/
 *.log*
+Dockerfile*
+.dockerignore

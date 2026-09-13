@@ -5,7 +5,17 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from ccpf.cli import main, project_slug
+from ccpf.cli import TEMPLATE_PATH, main, project_slug
+
+
+def render_project(tmp_path: Path, *args: str) -> Path:
+    output_dir = tmp_path / "output"
+    result = CliRunner().invoke(
+        main,
+        ["--no-input", "--output-dir", str(output_dir), *args],
+    )
+    assert result.exit_code == 0, result.output
+    return output_dir / "prefect-project"
 
 
 def test_project_slug_is_generic_and_path_safe() -> None:
@@ -55,10 +65,15 @@ def test_cli_renders_custom_project_values(
     build = parsed["build"][0]["prefect_docker.deployments.steps.build_docker_image"]
     assert build["image_name"] == "registry/example-project"
     assert build["tag"] == "development"
-    assert parsed["deployments"][0]["name"] is None
+    deployment = parsed["deployments"][0]
+    assert deployment["name"] == "example-flow"
+    assert deployment["entrypoint"] == (
+        "src/workflows/flows/example_flow.py:example_flow"
+    )
+    assert parsed["push"] == []
+    assert parsed["pull"] == []
     assert "# deployments:" in prefect_yaml
     assert "#           - your.domain.event" in prefect_yaml
-    assert "'{{ repository }}'" in prefect_yaml
     assert "'{{ build_image.image }}'" in prefect_yaml
     assert '"{{ event.payload.value }}"' in prefect_yaml
 
@@ -91,3 +106,472 @@ def test_cli_help_is_available() -> None:
 
     assert result.exit_code == 0
     assert "Docker image name" in result.output
+
+
+@pytest.mark.parametrize("version", ["3", "3.x", "3.12.1.2", "latest"])
+def test_invalid_python_version_fails_before_rendering(
+    tmp_path: Path, version: str
+) -> None:
+    result = CliRunner().invoke(
+        main,
+        [
+            "--no-input",
+            "--python-version",
+            version,
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "must be a numeric major.minor or major.minor.patch version" in result.output
+    assert not (tmp_path / "prefect-project").exists()
+
+
+@pytest.mark.parametrize(
+    "version",
+    ["3", "3.8", "3.8.4.1", "3.8.4.dev1", "3.8.4rc1", "latest"],
+)
+def test_invalid_prefect_version_fails_before_rendering(
+    tmp_path: Path, version: str
+) -> None:
+    result = CliRunner().invoke(
+        main,
+        [
+            "--no-input",
+            "--prefect-version",
+            version,
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "must be a numeric major.minor.patch version" in result.output
+    assert not (tmp_path / "prefect-project").exists()
+
+
+def test_existing_destination_emits_data_loss_warning(tmp_path: Path) -> None:
+    output_dir = tmp_path / "output"
+    render_project(tmp_path)
+
+    result = CliRunner().invoke(
+        main,
+        [
+            "--no-input",
+            "--output-dir",
+            str(output_dir),
+            "--overwrite-if-exists",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "already exists; existing data may be lost" in result.output
+
+
+@pytest.mark.parametrize(
+    ("args", "present", "absent"),
+    [
+        (
+            ("--deployment-mode", "none"),
+            ("prefect.yaml",),
+            (
+                ".dockerignore",
+                "Dockerfile",
+                "Dockerfile.worker",
+                "Makefile",
+                "docker-compose.yml",
+                "docker-compose.server.yml",
+            ),
+        ),
+        (
+            ("--deployment-mode", "centralized"),
+            (
+                ".dockerignore",
+                "Dockerfile",
+                "Makefile",
+                "docker-compose.yml",
+                "prefect.yaml",
+            ),
+            ("Dockerfile.worker", "docker-compose.server.yml"),
+        ),
+        (
+            (
+                "--deployment-mode",
+                "centralized",
+                "--include-centralized-server-compose",
+            ),
+            (
+                "Dockerfile",
+                "Dockerfile.worker",
+                ".dockerignore",
+                "Makefile",
+                "docker-compose.yml",
+                "docker-compose.server.yml",
+                "prefect.yaml",
+            ),
+            (),
+        ),
+        (
+            ("--deployment-mode", "standalone"),
+            (
+                ".dockerignore",
+                "Dockerfile",
+                "Dockerfile.worker",
+                "Makefile",
+                "docker-compose.yml",
+                "prefect.yaml",
+            ),
+            ("docker-compose.server.yml",),
+        ),
+    ],
+)
+def test_deployment_artifact_matrix(
+    tmp_path: Path,
+    args: tuple[str, ...],
+    present: tuple[str, ...],
+    absent: tuple[str, ...],
+) -> None:
+    project_dir = render_project(tmp_path, *args)
+
+    for filename in present:
+        assert (project_dir / filename).is_file(), filename
+    for filename in absent:
+        assert not (project_dir / filename).exists(), filename
+
+
+def test_omitted_mode_defaults_to_centralized(tmp_path: Path) -> None:
+    project_dir = render_project(tmp_path)
+
+    assert (project_dir / "docker-compose.yml").is_file()
+    assert (project_dir / "Dockerfile").is_file()
+    assert not (project_dir / "docker-compose.server.yml").exists()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "localhost:4200/api",
+        "http://localhost/api",
+        "http://localhost:0/api",
+        "http://localhost:65536/api",
+    ],
+)
+def test_invalid_prefect_server_url_fails_before_rendering(
+    tmp_path: Path, url: str
+) -> None:
+    result = CliRunner().invoke(
+        main,
+        [
+            "--no-input",
+            "--prefect-server-url",
+            url,
+            "--output-dir",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert not (tmp_path / "prefect-project").exists()
+
+
+def test_centralized_application_compose_is_independent_of_server_stack(
+    tmp_path: Path,
+) -> None:
+    without_server = render_project(
+        tmp_path / "without-server", "--deployment-mode", "centralized"
+    )
+    with_server = render_project(
+        tmp_path / "with-server",
+        "--deployment-mode",
+        "centralized",
+        "--include-centralized-server-compose",
+    )
+
+    assert (without_server / "docker-compose.yml").read_text() == (
+        with_server / "docker-compose.yml"
+    ).read_text()
+
+
+def test_compose_topology_and_endpoint_propagation(tmp_path: Path) -> None:
+    project_dir = render_project(
+        tmp_path,
+        "--deployment-mode",
+        "standalone",
+        "--prefect-server-url",
+        "http://prefect.example.test:5420/api",
+    )
+
+    compose = yaml.safe_load((project_dir / "docker-compose.yml").read_text())
+    prefect = yaml.safe_load((project_dir / "prefect.yaml").read_text())
+    services = compose["services"]
+
+    assert {
+        "deploy",
+        "prefect-server",
+        "prefect-postgres",
+        "prefect-worker",
+    } <= services.keys()
+    assert "postgres" not in services
+    assert services["deploy"].get("restart") is None
+    assert services["prefect-server"]["restart"] == "unless-stopped"
+    assert services["prefect-postgres"]["restart"] == "unless-stopped"
+    assert services["prefect-worker"]["restart"] == "unless-stopped"
+    assert compose["volumes"] == {"prefect-postgres-data": None}
+    assert services["prefect-server"]["ports"] == ["127.0.0.1:5420:5420"]
+    database_url = services["prefect-server"]["environment"][
+        "PREFECT_SERVER_DATABASE_CONNECTION_URL"
+    ]
+    assert database_url.startswith("postgresql+asyncpg://${PREFECT_DB_USER:?")
+    assert "${PREFECT_DB_PASSWORD:?" in database_url
+    assert "@prefect-postgres:5432/${PREFECT_DB_NAME:?" in database_url
+    assert ":-" not in database_url
+    assert services["prefect-server"]["env_file"] == "./.env"
+    assert services["prefect-server"]["networks"] == [
+        "prefect-network",
+        "prefect-backend",
+    ]
+    database = services["prefect-postgres"]
+    assert database["networks"] == ["prefect-backend"]
+    assert database["env_file"] == "./.env"
+    for variable in ("POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_DB"):
+        assert database["environment"][variable].startswith("${PREFECT_DB_")
+        assert ":?" in database["environment"][variable]
+        assert ":-" not in database["environment"][variable]
+    assert services["prefect-worker"]["networks"] == ["prefect-network"]
+    assert "--name prefect-project-docker-worker" in services["prefect-worker"][
+        "command"
+    ]
+    assert "--with-healthcheck" in services["prefect-worker"]["command"]
+    assert "healthcheck" in services["prefect-worker"]
+    assert services["prefect-server"]["environment"]["PREFECT_SERVER_UI_API_URL"] == (
+        "http://prefect.example.test:5420/api"
+    )
+    assert "5420/api" in services["prefect-worker"]["environment"]["PREFECT_API_URL"]
+    assert compose["networks"]["prefect-network"]["name"] == (
+        "prefect-server-network"
+    )
+    assert prefect["deployments"][0]["work_pool"]["name"] == "local-docker-pool"
+    job_variables = prefect["deployments"][0]["work_pool"]["job_variables"]
+    assert prefect["deployments"][0]["entrypoint"] == (
+        "src/workflows/flows/example_flow.py:example_flow"
+    )
+    assert prefect["push"] == []
+    assert prefect["pull"] == []
+    assert job_variables["image_pull_policy"] == "Never"
+    assert job_variables["auto_remove"] is True
+    assert job_variables["networks"] == ["prefect-server-network"]
+    assert job_variables["env"]["PREFECT_API_URL"] == (
+        "http://prefect-server:5420/api"
+    )
+    assert (
+        prefect["deployments"][0]["work_pool"]["job_variables"]["env"]["PREFECT_SERVER_PORT"]
+        == "5420"
+    )
+    assert "5420" in (project_dir / ".env.example").read_text()
+    assert "5420" in (project_dir / "Makefile").read_text()
+    assert "5420" in (project_dir / "README.md").read_text()
+
+
+def test_server_compose_contains_prefect_infrastructure(tmp_path: Path) -> None:
+    project_dir = render_project(
+        tmp_path,
+        "--deployment-mode",
+        "centralized",
+        "--include-centralized-server-compose",
+    )
+
+    server = yaml.safe_load((project_dir / "docker-compose.server.yml").read_text())
+    assert {"prefect-server", "prefect-postgres", "prefect-worker"} <= server[
+        "services"
+    ].keys()
+    assert "postgres" not in server["services"]
+    assert "healthcheck" in server["services"]["prefect-server"]
+    assert "/var/run/docker.sock:/var/run/docker.sock" in server["services"][
+        "prefect-worker"
+    ]["volumes"]
+    worker = server["services"]["prefect-worker"]
+    assert worker["container_name"] == "central-docker-worker"
+    assert worker["hostname"] == "central-docker-worker"
+    assert worker["build"] == {"context": ".", "dockerfile": "Dockerfile.worker"}
+    assert worker["restart"] == "unless-stopped"
+    assert "--name central-docker-worker" in worker["command"]
+    assert "--with-healthcheck" in worker["command"]
+    assert "healthcheck" in worker
+    assert server["services"]["prefect-server"]["ports"] == [
+        "127.0.0.1:4200:4200"
+    ]
+    assert server["services"]["prefect-server"]["networks"] == [
+        "prefect-network",
+        "prefect-backend",
+    ]
+    assert server["services"]["prefect-postgres"]["networks"] == [
+        "prefect-backend"
+    ]
+    assert server["services"]["prefect-worker"]["networks"] == ["prefect-network"]
+    assert server["networks"]["prefect-backend"] == {"internal": True}
+    assert server["services"]["prefect-server"]["restart"] == "unless-stopped"
+    assert server["services"]["prefect-postgres"]["restart"] == "unless-stopped"
+    assert server["volumes"] == {"prefect-postgres-data": None}
+
+    for service_name in ("prefect-server", "prefect-postgres"):
+        assert server["services"][service_name]["env_file"] == "./.env"
+    server_database_url = server["services"]["prefect-server"]["environment"][
+        "PREFECT_SERVER_DATABASE_CONNECTION_URL"
+    ]
+    assert "${PREFECT_DB_PASSWORD:?" in server_database_url
+    assert ":-" not in server_database_url
+
+
+def test_centralized_containers_use_shared_network_and_uv(tmp_path: Path) -> None:
+    project_dir = render_project(tmp_path, "--deployment-mode", "centralized")
+
+    compose = yaml.safe_load((project_dir / "docker-compose.yml").read_text())
+    prefect = yaml.safe_load((project_dir / "prefect.yaml").read_text())
+    deploy = compose["services"]["deploy"]
+    job_variables = prefect["deployments"][0]["work_pool"]["job_variables"]
+
+    assert set(compose["services"]) == {"deploy"}
+    assert deploy["environment"]["PREFECT_API_URL"] == (
+        "${PREFECT_CONTAINER_API_URL:-http://prefect-server:4200/api}"
+    )
+    assert deploy["networks"] == ["prefect-network"]
+    assert compose["networks"]["prefect-network"] == {
+        "name": "prefect-server-network",
+        "external": True,
+    }
+    assert job_variables["env"]["PREFECT_API_URL"] == (
+        "http://prefect-server:4200/api"
+    )
+    assert job_variables["networks"] == ["prefect-server-network"]
+    assert deploy["command"][:4] == ["uv", "run", "--isolated", "--with-editable"]
+
+    dockerfile = (project_dir / "Dockerfile").read_text()
+    assert "RUN uv sync --no-dev" in dockerfile
+    assert "pip install" not in dockerfile
+
+    dockerignore = (project_dir / ".dockerignore").read_text()
+    assert "data/" in dockerignore.splitlines()
+
+    makefile = (project_dir / "Makefile").read_text()
+    assert "PREFECT_CONTAINER_API_URL=$(PREFECT_CONTAINER_API_URL)" in makefile
+    assert "docker compose --env-file .env" in makefile
+    assert "server-up:" not in makefile
+    assert "server-down:" not in makefile
+
+
+def test_centralized_external_api_url_keeps_service_dns_default(
+    tmp_path: Path,
+) -> None:
+    project_dir = render_project(
+        tmp_path,
+        "--deployment-mode",
+        "centralized",
+        "--prefect-server-url",
+        "https://prefect.example.test:8443/api",
+    )
+
+    compose = yaml.safe_load((project_dir / "docker-compose.yml").read_text())
+    assert compose["services"]["deploy"]["environment"]["PREFECT_API_URL"] == (
+        "${PREFECT_CONTAINER_API_URL:-http://prefect-server:8443/api}"
+    )
+    prefect = yaml.safe_load((project_dir / "prefect.yaml").read_text())
+    assert prefect["deployments"][0]["work_pool"]["job_variables"]["env"][
+        "PREFECT_API_URL"
+    ] == "http://prefect-server:8443/api"
+
+
+def test_centralized_server_make_targets_follow_optional_compose(
+    tmp_path: Path,
+) -> None:
+    project_dir = render_project(
+        tmp_path,
+        "--deployment-mode",
+        "centralized",
+        "--include-centralized-server-compose",
+    )
+
+    makefile = (project_dir / "Makefile").read_text()
+    assert "server-up:" in makefile
+    assert "server-down:" in makefile
+
+    server = yaml.safe_load((project_dir / "docker-compose.server.yml").read_text())
+    assert server["networks"]["prefect-network"]["name"] == (
+        "prefect-server-network"
+    )
+
+    worker_dockerfile = (project_dir / "Dockerfile.worker").read_text()
+    assert 'uv pip install --system "prefect[docker]==3.8.4"' in worker_dockerfile
+    assert "RUN pip install" not in worker_dockerfile
+    assert "job-notifier" not in worker_dockerfile
+
+
+def test_readme_preserves_project_sections_and_changes_deployment_section(
+    tmp_path: Path,
+) -> None:
+    for mode in ("none", "centralized", "standalone"):
+        project_dir = render_project(
+            tmp_path / mode, "--deployment-mode", mode
+        )
+        readme = (project_dir / "README.md").read_text()
+
+        assert "## Getting Started" in readme
+        assert "## Project Layout" in readme
+        assert "<!-- deployment:" not in readme
+        if mode == "none":
+            assert "docker-compose.yml" not in readme
+        elif mode == "standalone":
+            assert "contains the application deployment helper" in readme
+            assert "docker-compose.server.yml" not in readme
+        else:
+            assert "docker-compose.yml" in readme
+
+
+def test_centralized_follow_up_prompt_is_only_interactive_centralized(
+    tmp_path: Path,
+) -> None:
+    centralized = CliRunner().invoke(
+        main,
+        [
+            "--project-name",
+            "Centralized",
+            "--deployment-mode",
+            "centralized",
+            "--output-dir",
+            str(tmp_path / "centralized"),
+        ],
+        input="\n" * 7,
+    )
+    standalone = CliRunner().invoke(
+        main,
+        [
+            "--project-name",
+            "Standalone",
+            "--deployment-mode",
+            "standalone",
+            "--output-dir",
+            str(tmp_path / "standalone"),
+        ],
+        input="\n" * 6,
+    )
+
+    assert centralized.exit_code == 0, centralized.output
+    assert "Generate docker-compose.server.yml?" in centralized.output
+    assert standalone.exit_code == 0, standalone.output
+    assert "Generate docker-compose.server.yml?" not in standalone.output
+
+
+def test_packaged_template_contains_deployment_candidates() -> None:
+    project_template = TEMPLATE_PATH / "{{cookiecutter.project_slug}}"
+
+    for filename in (
+        "Dockerfile",
+        "Dockerfile.worker",
+        ".dockerignore",
+        "Makefile",
+        "docker-compose.yml",
+        "docker-compose.server.yml",
+        ".env.example",
+    ):
+        assert (project_template / filename).is_file(), filename
+    assert (TEMPLATE_PATH / "hooks/post_gen_project.py").is_file()

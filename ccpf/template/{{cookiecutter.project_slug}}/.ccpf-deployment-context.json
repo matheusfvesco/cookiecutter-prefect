@@ -1,0 +1,4 @@
+{
+  "deployment_mode": "{{ cookiecutter.deployment_mode }}",
+  "include_centralized_server_compose": {{ cookiecutter.include_centralized_server_compose | lower }}
+}
